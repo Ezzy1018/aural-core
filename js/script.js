@@ -6,7 +6,7 @@
 const CONFIG = {
   frameCount: 240,                                   // frames in /frames
   framePath: (i) => `frames/frame_${String(i).padStart(4, "0")}.jpg`,
-  background: "#737373",                              // MATCH your frame bg + --bg in CSS
+  background: "#eceae5",                              // MATCH your frame bg + --bg in CSS
   fit: "cover",                                      // "contain" or "cover"
 };
 
@@ -62,7 +62,6 @@ function resizeCanvas() {
   canvas.height = Math.round(canvas.clientHeight * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   render(currentFrame);
-  positionBadges();
 }
 function render(index) {
   currentFrame = Math.max(0, Math.min(CONFIG.frameCount - 1, index | 0));
@@ -167,9 +166,9 @@ function initScroll() {
   });
 }
 
-/* ---------- Badge Loading and Position Calculation ---------- */
-async function loadBadge(containerId) {
-  const container = document.getElementById(containerId);
+/* ---------- Seal Loading ---------- */
+async function loadSeal() {
+  const container = document.getElementById("seal");
   if (!container) return;
   try {
     const res = await fetch("images/Asset.svg");
@@ -178,82 +177,27 @@ async function loadBadge(containerId) {
     
     const svg = container.querySelector("svg");
     if (!svg) return;
-    svg.setAttribute("width", "100%");
-    svg.setAttribute("height", "100%");
+    svg.setAttribute("class", "seal__svg");
+    svg.removeAttribute("width");
+    svg.removeAttribute("height");
     
-    // Wrap direct child path elements in a rotating group
+    // Wrap direct child path elements in a rotating group class seal__text
     const svgPaths = Array.from(svg.children).filter(el => el.tagName.toLowerCase() === "path");
     if (svgPaths.length > 0) {
       const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      g.setAttribute("class", "badge-rotating");
+      g.setAttribute("class", "seal__text");
       svgPaths[0].parentNode.insertBefore(g, svgPaths[0]);
       svgPaths.forEach(path => g.appendChild(path));
     }
   } catch (err) {
-    console.error("Failed to load badge asset:", err);
+    console.error("Failed to load seal asset:", err);
   }
-}
-
-function positionBadges() {
-  const badgeLeft = document.getElementById("badgeLeft");
-  const badgeRight = document.getElementById("badgeRight");
-  if (!canvas || !badgeLeft || !badgeRight) return;
-  
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-  
-  // Natural image dimensions in video frames
-  const imgW = 1280;
-  const imgH = 720;
-  const ir = imgW / imgH;
-  const cr = w / h;
-  
-  // Calculate drawn image dimensions and offsets matching cover fit
-  let dw, dh, dx, dy;
-  if (ir > cr) {
-    dh = h;
-    dw = h * ir;
-    dx = (w - dw) / 2;
-    dy = 0;
-  } else {
-    dw = w;
-    dh = w / ir;
-    dx = 0;
-    dy = (h - dh) / 2;
-  }
-  
-  // Left badge (covers star mark): center in frame is x=239, y=328 (from 18.65% width, 45.56% height)
-  const leftRatioX = 239 / 1280;
-  const leftRatioY = 328 / 720;
-  const badgeLeftX = dx + leftRatioX * dw;
-  const badgeLeftY = dy + leftRatioY * dh;
-  
-  // Bottom-right badge (overlays logo): center in frame is x=1167, y=605 (from 91.16% width, 84.00% height)
-  const rightRatioX = 1167 / 1280;
-  const rightRatioY = 605 / 720;
-  const badgeRightX = dx + rightRatioX * dw;
-  const badgeRightY = dy + rightRatioY * dh;
-  
-  // Size of the badge scales with the image height (matching mockup scale 47px / 597px)
-  const badgeSize = dh * (47 / 597);
-  
-  // Update Left badge styles
-  badgeLeft.style.width = badgeSize + "px";
-  badgeLeft.style.height = badgeSize + "px";
-  badgeLeft.style.left = (badgeLeftX - badgeSize / 2) + "px";
-  badgeLeft.style.top = (badgeLeftY - badgeSize / 2) + "px";
-  
-  // Update Right badge styles
-  badgeRight.style.width = badgeSize + "px";
-  badgeRight.style.height = badgeSize + "px";
-  badgeRight.style.left = (badgeRightX - badgeSize / 2) + "px";
-  badgeRight.style.top = (badgeRightY - badgeSize / 2) + "px";
 }
 
 /* ---------- Boot ---------- */
 async function init() {
-  // Load badges first so they are ready to position
-  await Promise.all([loadBadge("badgeLeft"), loadBadge("badgeRight")]);
+  // Load seal badge first
+  await loadSeal();
 
   resizeCanvas();
   addEventListener("resize", resizeCanvas, { passive: true });

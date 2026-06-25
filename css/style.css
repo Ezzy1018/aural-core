@@ -1,10 +1,10 @@
 /* ---------- Tokens ---------- */
 :root {
   /* MATCH --bg to your frame background so canvas edges vanish */
-  --bg: #737373;
+  --bg: #eceae5;
   --bg-dark: #0d0d0f;
   --ink: #14130f;
-  --ink-soft: rgba(20, 19, 15, 0.6);
+  --ink-soft: #6b6860;
   --ink-inv: #f4f2ec;
   --line: rgba(0,0,0,0.12);
   --maxw: 1180px;
@@ -88,21 +88,14 @@ em { font-family: var(--serif); font-style: italic; font-weight: 400; letter-spa
 .hero { position: relative; height: 420vh; }
 .hero__sticky { position: sticky; top: 0; height: 100vh; width: 100%; overflow: hidden; }
 .hero__canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.hero__badge {
-  position: absolute;
-  z-index: 10;
-  pointer-events: none;
-  display: block;
-}
-.badge-rotating {
-  rotate: 0deg;
-  animation: rotate-badge 25s linear infinite;
-  transform-origin: 57.7031px 56.2148px;
-}
-@keyframes rotate-badge {
-  from { rotate: 0deg; }
-  to { rotate: 360deg; }
-}
+/* Rotating maker's mark — only the curved text spins; the core stays fixed. Sits over the stray dot. */
+.seal { position: absolute; z-index: 8; pointer-events: none; right: clamp(28px, 5vw, 72px); bottom: clamp(28px, 5vw, 72px); width: 156px; height: 156px; }
+.seal__svg { width: 100%; height: 100%; overflow: visible; display: block; }
+.seal__text { transform-box: fill-box; transform-origin: center; animation: sealSpin 16s linear infinite; }
+.seal__text text { fill: var(--ink-inv); font-family: var(--display); font-size: 16px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; filter: drop-shadow(0 1px 6px rgba(0,0,0,0.45)); }
+.seal__core { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 44%; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; background: #e9ff3f; color: #14130f; font-family: var(--display); font-weight: 700; font-size: clamp(14px, 1.8vw, 20px); letter-spacing: -0.01em; }
+@keyframes sealSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .seal__text { animation: none; } }
 .hero__copy { position: absolute; inset: 0; pointer-events: none; color: var(--ink-inv); }
 .copy { position: absolute; width: min(620px, 84vw); opacity: 0; will-change: opacity, transform; text-shadow: 0 1px 38px rgba(0,0,0,0.55), 0 1px 4px rgba(0,0,0,0.35); }
 /* Feathered legibility scrim so copy stays readable over the product AND the bg */
