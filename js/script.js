@@ -1,538 +1,192 @@
-/* ============================================================
-   Aural Core — script.js
-   Scroll-driven image-sequence hero + GSAP ScrollTrigger
-   Plain JS · No build step · Works with python -m http.server
-   ============================================================ */
+/* =========================================================
+   Aural Core v2 — award-grade scroll experience
+   GSAP + ScrollTrigger + Lenis. Plain JS, no build.
+   ========================================================= */
 
-/* ─── CONFIG ─────────────────────────────────────────────── */
 const CONFIG = {
-  /*
-    frameCount: 240 frames extracted from video.mp4 at 24fps (10s clip).
-    Frames live in /frames/ as frame_0001.jpg → frame_0240.jpg
-    ----------------------------------------------------------------
-    Extracted with:
-      ffmpeg -i video/video.mp4 -vf "fps=24,scale=1280:-1:flags=lanczos" \
-             -q:v 3 frames/frame_%04d.jpg
-  */
-  frameCount: 240,
-
-  /* Path builder — matches the extracted .jpg naming */
+  frameCount: 240,                                   // frames in /frames
   framePath: (i) => `frames/frame_${String(i).padStart(4, "0")}.jpg`,
-
-  /*
-    background: sampled from top corners of frame_0001.jpg → #737373
-    This is the neutral grey of the video backdrop.
-    Painted behind each frame so canvas edges are invisible.
-  */
-  background: "#737373",
-
-  /*
-    fit: how the frame image is sized onto the canvas.
-    "contain" — whole product always visible (recommended)
-    "cover"   — fills the full viewport (some cropping)
-  */
-  fit: "cover",
-
-  /*
-    scrub: GSAP scrub value (seconds of lag behind scroll).
-    0.6 gives a silky, slightly weighted feel on 240 frames.
-  */
-  scrub: 0.6,
+  background: "#737373",                              // MATCH your frame bg + --bg in CSS
+  fit: "cover",                                      // "contain" or "cover"
 };
 
-/* ─── STATIC FALLBACK IMAGES ────────────────────────────── */
-/*
-  When frameCount === 0 (no video frames extracted yet), the page
-  uses these three product shots to drive the scroll sequence,
-  crossfading between them at scroll progress thresholds.
-  (Currently unused since frameCount = 240, but kept for reference.)
-*/
-const STATIC_SCENES = [
-  { src: "images/product-white.webp",    threshold: 0   },
-  { src: "images/product-exploded.webp", threshold: 0.4 },
-  { src: "images/product-black.webp",    threshold: 0.8 },
-];
+const prefersReduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const finePointer = matchMedia("(pointer: fine)").matches;
 
-/* ─── DOM references ────────────────────────────────────── */
-const canvas      = document.getElementById("heroCanvas");
-const ctx         = canvas.getContext("2d", { alpha: false });
-const loader      = document.getElementById("loader");
-const loaderFill  = document.getElementById("loaderFill");
-const loaderPct   = document.getElementById("loaderPct");
-const loaderTrack = document.getElementById("loaderTrack");
-const fallbackEl  = document.getElementById("heroFallback");
-const scrollHint  = document.getElementById("scrollIndicator");
-const progressFill = document.getElementById("heroProgress");
-const mainNav     = document.getElementById("mainNav");
-const hamburger   = document.getElementById("navHamburger");
-const mobileMenu  = document.getElementById("mobileMenu");
-
+const canvas = document.getElementById("heroCanvas");
+const ctx = canvas.getContext("2d", { alpha: false });
+const loader = document.getElementById("loader");
+const loaderFill = document.getElementById("loaderFill");
+const loaderCount = document.getElementById("loaderCount");
 const copies = Array.from(document.querySelectorAll(".copy"));
-const reveals = Array.from(document.querySelectorAll("[data-reveal]"));
 
-const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-/* ─── STATE ─────────────────────────────────────────────── */
-let frames       = [];      // preloaded frame Image objects
-let staticImages = [];      // preloaded static scene Image objects
-let loaded       = 0;
+const frames = [];
+let loaded = 0;
 let currentFrame = 0;
-let usingStatic  = false;
-let currentStaticIndex = -1;
 
-/* ═══════════════════════════════════════════════════════════
-   PRELOADING
-   ═══════════════════════════════════════════════════════════ */
+gsap.registerPlugin(ScrollTrigger);
 
-function loadImage(src) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.decoding = "async";
-    img.onload  = () => resolve(img);
-    img.onerror = () => resolve(null); // don't block on missing assets
-    img.src = src;
-  });
+/* ---------- Smooth scroll (Lenis) ---------- */
+let lenis = null;
+if (!prefersReduced && window.Lenis) {
+  lenis = new Lenis({ lerp: 0.1, smoothWheel: true });
+  lenis.on("scroll", ScrollTrigger.update);
+  gsap.ticker.add((t) => lenis.raf(t * 1000));
+  gsap.ticker.lagSmoothing(0);
 }
 
-async function preload() {
-  if (CONFIG.frameCount > 0) {
-    /* ─ Frame sequence mode ─ */
-    usingStatic = false;
-    const total = CONFIG.frameCount;
-    const batchSize = 10;
-
-    for (let i = 1; i <= total; i++) {
+/* ---------- Preload frames (drives loader counter) ---------- */
+function preload() {
+  return new Promise((resolve) => {
+    if (CONFIG.frameCount <= 0) return resolve();
+    for (let i = 1; i <= CONFIG.frameCount; i++) {
       const img = new Image();
       img.decoding = "async";
       img.onload = img.onerror = () => {
         loaded++;
-        const pct = Math.round((loaded / total) * 100);
+        const pct = Math.round((loaded / CONFIG.frameCount) * 100);
         loaderFill.style.width = pct + "%";
-        loaderPct.textContent  = pct + "%";
-        loaderTrack.setAttribute("aria-valuenow", pct);
+        loaderCount.textContent = pct;
+        if (loaded === CONFIG.frameCount) resolve();
       };
       img.src = CONFIG.framePath(i);
       frames[i - 1] = img;
-
-      // Brief yield every batch so the browser can paint progress
-      if (i % batchSize === 0) await new Promise(r => setTimeout(r, 0));
     }
-
-    // Wait until all loaded/errored
-    await new Promise((resolve) => {
-      const check = () => (loaded >= total ? resolve() : setTimeout(check, 50));
-      check();
-    });
-
-  } else {
-    /* ─ Static image fallback mode ─ */
-    usingStatic = true;
-    const total = STATIC_SCENES.length;
-
-    for (let i = 0; i < total; i++) {
-      const img = await loadImage(STATIC_SCENES[i].src);
-      staticImages[i] = img;
-      const pct = Math.round(((i + 1) / total) * 100);
-      loaderFill.style.width = pct + "%";
-      loaderPct.textContent  = pct + "%";
-      loaderTrack.setAttribute("aria-valuenow", pct);
-    }
-  }
+  });
 }
 
-/* ═══════════════════════════════════════════════════════════
-   CANVAS RENDERING
-   ═══════════════════════════════════════════════════════════ */
-
+/* ---------- Canvas ---------- */
 function resizeCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w   = canvas.clientWidth;
-  const h   = canvas.clientHeight;
-  canvas.width  = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
+  canvas.width = Math.round(canvas.clientWidth * dpr);
+  canvas.height = Math.round(canvas.clientHeight * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  if (usingStatic) {
-    renderStaticAt(currentStaticIndex < 0 ? 0 : currentStaticIndex);
-  } else {
-    renderFrame(currentFrame);
-  }
+  render(currentFrame);
 }
-
-function drawImageFit(img, w, h) {
+function render(index) {
+  currentFrame = Math.max(0, Math.min(CONFIG.frameCount - 1, index | 0));
+  const img = frames[currentFrame];
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  ctx.fillStyle = CONFIG.background;
+  ctx.fillRect(0, 0, w, h);
   if (!img || !img.complete || !img.naturalWidth) return;
-
-  const ir = img.naturalWidth / img.naturalHeight;
-  const cr = w / h;
-  let dw, dh;
+  const ir = img.naturalWidth / img.naturalHeight, cr = w / h;
   const cover = CONFIG.fit === "cover";
-  if (cover ? ir > cr : ir < cr) {
-    dh = h; dw = h * ir;
-  } else {
-    dw = w; dh = w / ir;
-  }
+  let dw, dh;
+  if (cover ? ir > cr : ir < cr) { dh = h; dw = h * ir; }
+  else { dw = w; dh = w / ir; }
   ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
 
-/* ─ Frame-sequence render ─ */
-function renderFrame(index) {
-  currentFrame = Math.max(0, Math.min(CONFIG.frameCount - 1, index | 0));
-  const img = frames[currentFrame];
-  const w   = canvas.clientWidth;
-  const h   = canvas.clientHeight;
-
-  ctx.fillStyle = CONFIG.background;
-  ctx.fillRect(0, 0, w, h);
-  drawImageFit(img, w, h);
-}
-
-/* ─ Static crossfade render ─ */
-function renderStaticAt(index, alpha = 1) {
-  const w   = canvas.clientWidth;
-  const h   = canvas.clientHeight;
-
-  ctx.fillStyle = CONFIG.background;
-  ctx.fillRect(0, 0, w, h);
-
-  const img = staticImages[index];
-  if (!img) return;
-
-  ctx.globalAlpha = alpha;
-  drawImageFit(img, w, h);
-  ctx.globalAlpha = 1;
-}
-
-/*
-  For static mode: smoothly crossfade between scenes based on scroll progress.
-  Each scene has a threshold (0–1) marking when it becomes dominant.
-*/
-function renderStaticByProgress(progress) {
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-
-  ctx.fillStyle = CONFIG.background;
-  ctx.fillRect(0, 0, w, h);
-
-  // Find which scene we're between
-  let fromIdx = 0;
-  let toIdx   = 0;
-  let t       = 0; // 0 = fully from, 1 = fully to
-
-  for (let i = 0; i < STATIC_SCENES.length - 1; i++) {
-    const start = STATIC_SCENES[i].threshold;
-    const end   = STATIC_SCENES[i + 1].threshold;
-    if (progress >= start && progress <= end) {
-      fromIdx = i;
-      toIdx   = i + 1;
-      // Ease the transition over 15% of the total scroll range
-      const transitionWidth = 0.12;
-      const transStart = end - transitionWidth;
-      t = progress < transStart ? 0 : (progress - transStart) / transitionWidth;
-      t = Math.min(1, Math.max(0, t));
-      t = easeInOut(t);
-      break;
-    }
-    if (progress > end) {
-      fromIdx = toIdx = i + 1;
-      t = 1;
-    }
-  }
-  if (progress >= STATIC_SCENES[STATIC_SCENES.length - 1].threshold) {
-    fromIdx = toIdx = STATIC_SCENES.length - 1;
-    t = 1;
-  }
-
-  const from = staticImages[fromIdx];
-  const to   = staticImages[toIdx];
-
-  if (from) {
-    ctx.globalAlpha = 1 - t;
-    drawImageFit(from, w, h);
-  }
-  if (to && toIdx !== fromIdx) {
-    ctx.globalAlpha = t;
-    drawImageFit(to, w, h);
-  }
-  ctx.globalAlpha = 1;
-
-  currentStaticIndex = t > 0.5 ? toIdx : fromIdx;
-}
-
-function easeInOut(t) {
-  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   COPY OVERLAYS
-   Bands define [scrollStart, scrollEnd] per copy panel (0–1).
-   ═══════════════════════════════════════════════════════════ */
-
-const BANDS = [
-  [0.00, 0.18], // Panel 0 — brand title
-  [0.22, 0.42], // Panel 1 — left tagline
-  [0.46, 0.68], // Panel 2 — right tagline
-  [0.75, 1.00], // Panel 3 — CTA
-];
-const FADE = 0.06; // fraction of scroll range for fade in/out
-
-function bandOpacity(p, start, end) {
-  if (p <= start - FADE || p >= end + FADE) return 0;
-  if (p < start) return (p - (start - FADE)) / FADE;
-  if (p > end)   return 1 - (p - end) / FADE;
+/* ---------- Hero copy bands ---------- */
+const BANDS = [[0.0, 0.18], [0.22, 0.42], [0.48, 0.7], [0.78, 1.0]];
+function band(p, s, e, fade = 0.05) {
+  if (p <= s - fade || p >= e + fade) return 0;
+  if (p < s) return (p - (s - fade)) / fade;
+  if (p > e) return 1 - (p - e) / fade;
   return 1;
 }
-
-function updateCopy(progress) {
+function updateCopy(p) {
   copies.forEach((el, i) => {
-    if (!BANDS[i]) return;
     const [s, e] = BANDS[i];
-    const o = bandOpacity(progress, s, e);
-    const drift = (1 - o) * 22; // px upward when invisible
-
+    const o = band(p, s, e);
+    const shift = (1 - o) * 26;
     el.style.opacity = o;
-
-    const isCenter = el.classList.contains("copy--center");
-    const isLeft   = el.classList.contains("copy--left");
-    const isRight  = el.classList.contains("copy--right");
-
-    if (isCenter) {
-      el.style.transform = `translate(-50%, calc(-50% + ${drift}px))`;
-    } else if (isLeft || isRight) {
-      el.style.transform = `translateY(calc(-50% + ${drift}px))`;
-    }
-
-    // Hide scroll hint once user has scrolled
-    if (progress > 0.04 && scrollHint) {
-      scrollHint.style.opacity = "0";
-      scrollHint.style.pointerEvents = "none";
+    if (el.classList.contains("copy--center")) {
+      el.style.transform = `translate(-50%, calc(-50% + ${shift}px))`;
+    } else {
+      el.style.transform = `translateY(${shift}px)`;
     }
   });
 }
 
-/* ═══════════════════════════════════════════════════════════
-   NAV SCROLL BEHAVIOUR
-   ═══════════════════════════════════════════════════════════ */
-
-function initNav() {
-  const onScroll = () => {
-    mainNav.classList.toggle("is-scrolled", window.scrollY > 60);
-  };
-  window.addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
-
-  // Hamburger toggle
-  hamburger.addEventListener("click", () => {
-    const open = hamburger.getAttribute("aria-expanded") === "true";
-    hamburger.setAttribute("aria-expanded", String(!open));
-    mobileMenu.classList.toggle("is-open", !open);
-    mobileMenu.setAttribute("aria-hidden", String(open));
-    document.body.style.overflow = open ? "" : "hidden";
+/* ---------- Custom cursor ---------- */
+function initCursor() {
+  const cursor = document.querySelector(".cursor");
+  if (!cursor || !finePointer) return;
+  let mx = innerWidth / 2, my = innerHeight / 2, cx = mx, cy = my;
+  addEventListener("mousemove", (e) => { mx = e.clientX; my = e.clientY; });
+  gsap.ticker.add(() => {
+    cx += (mx - cx) * 0.18; cy += (my - cy) * 0.18;
+    cursor.style.transform = `translate(${cx}px, ${cy}px)`;
   });
+  document.querySelectorAll("[data-cursor]").forEach((el) => {
+    el.addEventListener("mouseenter", () => cursor.classList.add("is-active"));
+    el.addEventListener("mouseleave", () => cursor.classList.remove("is-active"));
+  });
+}
 
-  // Close mobile menu on link click
-  mobileMenu.querySelectorAll("a").forEach(a => {
-    a.addEventListener("click", () => {
-      hamburger.setAttribute("aria-expanded", "false");
-      mobileMenu.classList.remove("is-open");
-      mobileMenu.setAttribute("aria-hidden", "true");
-      document.body.style.overflow = "";
+/* ---------- Magnetic buttons ---------- */
+function initMagnetic() {
+  if (!finePointer) return;
+  document.querySelectorAll("[data-magnetic]").forEach((el) => {
+    el.addEventListener("mousemove", (e) => {
+      const r = el.getBoundingClientRect();
+      gsap.to(el, { x: (e.clientX - (r.left + r.width / 2)) * 0.3, y: (e.clientY - (r.top + r.height / 2)) * 0.4, duration: 0.4, ease: "power3.out" });
     });
+    el.addEventListener("mouseleave", () => gsap.to(el, { x: 0, y: 0, duration: 0.6, ease: "elastic.out(1, 0.4)" }));
   });
 }
 
-/* ═══════════════════════════════════════════════════════════
-   SECTION REVEAL OBSERVER
-   ═══════════════════════════════════════════════════════════ */
+/* ---------- Scroll reveals + progress + hero scrub ---------- */
+function initScroll() {
+  // Progress bar
+  gsap.to(".progress__bar", { scaleX: 1, ease: "none", scrollTrigger: { start: 0, end: "max", scrub: true } });
 
-function initReveal() {
-  const io = new IntersectionObserver(
-    (entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add("is-revealed");
-          io.unobserve(entry.target);
-        }
+  // Line-mask reveals
+  const lines = gsap.utils.toArray(".r-line");
+  if (prefersReduced) {
+    gsap.set(lines, { yPercent: 0, opacity: 1 });
+  } else {
+    lines.forEach((line) => {
+      gsap.set(line, { yPercent: 115 });
+      ScrollTrigger.create({
+        trigger: line,
+        start: "top 88%",
+        once: true,
+        onEnter: () => gsap.to(line, { yPercent: 0, duration: 1.1, ease: "expo.out" }),
       });
+    });
+  }
+
+  // Hero frame scrub
+  const playhead = { frame: 0 };
+  gsap.to(playhead, {
+    frame: CONFIG.frameCount - 1,
+    ease: "none",
+    snap: "frame",
+    scrollTrigger: {
+      trigger: ".hero",
+      start: "top top",
+      end: "bottom bottom",
+      scrub: prefersReduced ? true : 0.6,
+      onUpdate: (self) => updateCopy(self.progress),
     },
-    { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
-  );
-  reveals.forEach(el => io.observe(el));
+    onUpdate: () => render(Math.round(playhead.frame)),
+  });
 }
 
-/* ═══════════════════════════════════════════════════════════
-   MAIN INIT
-   ═══════════════════════════════════════════════════════════ */
-
+/* ---------- Boot ---------- */
 async function init() {
-  // Size canvas immediately so there's no flicker
   resizeCanvas();
-  window.addEventListener("resize", resizeCanvas, { passive: true });
+  addEventListener("resize", resizeCanvas, { passive: true });
+  initCursor();
+  initMagnetic();
 
-  // Load all assets
   await preload();
-
-  // Draw first frame/scene
-  if (usingStatic) {
-    renderStaticByProgress(0);
-  } else {
-    renderFrame(0);
-  }
-
+  render(0);
   updateCopy(0);
+  initScroll();
 
-  // Hide loader
-  loader.classList.add("is-hidden");
-
-  // Init supporting UI
-  initNav();
-  initReveal();
-
-  // Register GSAP plugin
-  gsap.registerPlugin(ScrollTrigger);
-
-  /* ─ Hero scroll animation ─ */
-  const playhead = { frame: 0, progress: 0 };
-
-  if (!usingStatic && CONFIG.frameCount > 0) {
-    /* ── Frame-sequence mode ── */
-    gsap.to(playhead, {
-      frame: CONFIG.frameCount - 1,
-      ease: "none",
-      scrollTrigger: {
-        trigger: ".hero",
-        start: "top top",
-        end: "bottom bottom",
-        scrub: prefersReduced ? true : CONFIG.scrub,
-        onUpdate(self) {
-          updateCopy(self.progress);
-          if (progressFill) progressFill.style.height = (self.progress * 100) + "%";
-        },
-      },
-      onUpdate() {
-        renderFrame(Math.round(playhead.frame));
-      },
-    });
-
-  } else {
-    /* ── Static crossfade mode ── */
-    gsap.to(playhead, {
-      progress: 1,
-      ease: "none",
-      scrollTrigger: {
-        trigger: ".hero",
-        start: "top top",
-        end: "bottom bottom",
-        scrub: prefersReduced ? true : CONFIG.scrub,
-        onUpdate(self) {
-          updateCopy(self.progress);
-          renderStaticByProgress(self.progress);
-          if (progressFill) progressFill.style.height = (self.progress * 100) + "%";
-        },
-      },
-    });
+  // Loader exit + first reveal
+  const heroLine = document.querySelector(".hero__title .r-line");
+  const tl = gsap.timeline();
+  tl.to(loader, { opacity: 0, duration: 0.8, ease: "expo.out", onComplete: () => loader.classList.add("is-hidden") });
+  if (heroLine && !prefersReduced) {
+    gsap.set(heroLine, { yPercent: 115 });
+    tl.to(heroLine, { yPercent: 0, duration: 1.2, ease: "expo.out" }, "-=0.3");
   }
-
-  /* ─ Sub-section animations ─ */
-  // Features section slide-in
-  gsap.from(".features__text", {
-    opacity: 0,
-    x: -30,
-    duration: 0.8,
-    ease: "power2.out",
-    scrollTrigger: {
-      trigger: ".section--features",
-      start: "top 80%",
-      once: true,
-    },
-  });
-
-  gsap.from(".features__media", {
-    opacity: 0,
-    x: 30,
-    duration: 0.8,
-    ease: "power2.out",
-    scrollTrigger: {
-      trigger: ".section--features",
-      start: "top 80%",
-      once: true,
-    },
-  });
-
-  // Layer list items
-  gsap.utils.toArray(".layer").forEach((el, i) => {
-    gsap.from(el, {
-      opacity: 0,
-      x: -20,
-      duration: 0.55,
-      delay: i * 0.1,
-      ease: "power2.out",
-      scrollTrigger: {
-        trigger: el,
-        start: "top 90%",
-        once: true,
-      },
-    });
-  });
-
-  // Variants slide in
-  gsap.utils.toArray(".variant").forEach((el, i) => {
-    gsap.from(el, {
-      opacity: 0,
-      y: 40,
-      scale: 0.96,
-      duration: 0.8,
-      delay: i * 0.15,
-      ease: "power3.out",
-      scrollTrigger: {
-        trigger: el,
-        start: "top 85%",
-        once: true,
-      },
-    });
-  });
-
-  // Spec rows stagger
-  gsap.utils.toArray(".specs-table__row").forEach((el, i) => {
-    gsap.from(el, {
-      opacity: 0,
-      x: -16,
-      duration: 0.45,
-      delay: i * 0.05,
-      ease: "power2.out",
-      scrollTrigger: {
-        trigger: ".specs-table",
-        start: "top 85%",
-        once: true,
-      },
-    });
-  });
-
-  // Engineering labels fade on image enter
-  ScrollTrigger.create({
-    trigger: ".engineering__img-wrap",
-    start: "top 70%",
-    onEnter: () => {
-      document.querySelectorAll(".engineering__label").forEach((lbl, i) => {
-        gsap.to(lbl, { opacity: 1, delay: 0.3 + i * 0.2, duration: 0.5 });
-      });
-    },
-    once: true,
-  });
-
-  // CTA section entrance
-  gsap.from(".cta__title", {
-    opacity: 0,
-    y: 40,
-    duration: 0.9,
-    ease: "power3.out",
-    scrollTrigger: {
-      trigger: ".section--cta",
-      start: "top 80%",
-      once: true,
-    },
-  });
-
   ScrollTrigger.refresh();
 }
 
-// Kick off
 init();
