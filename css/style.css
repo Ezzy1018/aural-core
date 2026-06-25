@@ -33,7 +33,7 @@
   /* ---- Spacing ---- */
   --maxw:  1120px;
   --gutter: clamp(20px, 5vw, 56px);
-  --section-py: clamp(80px, 14vh, 180px);
+  --section-py: clamp(50px, 8vh, 100px);
 
   /* ---- Motion ---- */
   --ease:       cubic-bezier(0.22, 1, 0.36, 1);
@@ -652,8 +652,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   position: relative;
   border-radius: 24px;
   overflow: hidden;
-  background: radial-gradient(circle at center, #2e2e2e 0%, #0c0c0c 100%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: radial-gradient(circle at center, #f5f4f2 0%, #e6e4df 100%);
+  border: 1px solid rgba(0, 0, 0, 0.05);
   aspect-ratio: 1/1;
   display: flex;
   align-items: center;
@@ -692,8 +692,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   position: relative;
   border-radius: 24px;
   overflow: hidden;
-  background: radial-gradient(circle at center, #2a2a2a 0%, #0d0d0d 100%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: radial-gradient(circle at center, #f5f4f2 0%, #e6e4df 100%);
+  border: 1px solid rgba(0, 0, 0, 0.05);
   aspect-ratio: 4/5;
   display: flex;
   align-items: center;
@@ -824,7 +824,14 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   background: radial-gradient(circle at center, #222222 0%, #0d0d0d 100%);
 }
 .variant__img-wrap--light {
-  background: radial-gradient(circle at center, #3a3a3a 0%, #111111 100%);
+  background: radial-gradient(circle at center, #f5f4f2 0%, #e6e4df 100%);
+  border-color: rgba(0, 0, 0, 0.05);
+}
+.variant__img-wrap--light:hover {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+.variant__img-wrap--light .variant__star {
+  color: rgba(0, 0, 0, 0.25);
 }
 
 .variant__img-wrap img {
