@@ -2,3 +2,4 @@
 video/
 node_modules/
 .vercel/
+.vercel
